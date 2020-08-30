@@ -195,7 +195,7 @@ In order to fit a model to the data, it was separated from the previously discus
 
 
 
-```{r,echo=FALSE}
+```{r}
 #REMOVE AUX VARIABLE
 pml.training <- pml.training[,-60]
 
@@ -218,7 +218,46 @@ dim(testing)
 In order to find and fit a good model to the data, two options were considered, they are; the LDA and Rpart method of the caret package. 
 To evaluate their performance, a cross validation of 10 folds was carried out, at the end of which the precision value of each model was obtained,
 
+
+```{r,eval=FALSE}
+#CREATE FOLDS - CROSS VALIDATION
+folds <- createFolds(training$classe, k = 10)
+
+#CROSS VALIDATION - LDA
+cv <- lapply(folds, function(x){
+  training_fold <- training[-x, ]
+  test_fold <- training[x, ]
+  clasificador <- train(classe ~ ., data = training_fold, method = "lda")
+  y_pred <- predict(clasificador, newdata = test_fold)
+  precision <- confusionMatrix(data = y_pred, reference = test_fold$classe)$overall[1]
+  return(precision)
+})
+
+precision_cv<- mean(as.numeric(cv))
+
+
+#CROSS VALIDATION - RPART
+cv_rpart <- lapply(folds, function(x){
+  training_fold <- training[-x, ]
+  test_fold <- training[x, ]
+  clasificador <- train(classe ~ ., data = training_fold, method = "rpart")
+  y_pred <- predict(clasificador, newdata = test_fold)
+  precision <- confusionMatrix(data = y_pred, reference = test_fold$classe)$overall[1]
+  return(precision)
+})
+
+precision_rpart<- mean(as.numeric(cv_rpart))
+
+z <- as.data.frame(matrix(0,2,2))
+names(z) <- c("Model","Accuracy")
+
+z$Model <- c("LDA","Rpart")
+z$Accuracy <- c(precision_cv,precision_rpart)
+z
+```
+
 ```{r,echo=FALSE}
+#LOAD PRELOADED MODEL - FOR COMPUTING TIME
 load("~/PRACTICAL_ML_COURSERA/data.RData")
 #CREATE FOLDS - CROSS VALIDATION
 folds <- createFolds(training$classe, k = 10)
@@ -258,17 +297,13 @@ z$Accuracy <- c(precision_cv,precision_rpart)
 z
 ```
 
-
 According to the previous table, it can be stated that the best model is the one obtained by the LDA method of the caret package.
 
 ### Confussion matrix
 
 The confusion matrix associated with this model, is presented bellow,
 
-```{r,echo=FALSE}
-#mod2 <- train(classe ~.,method="lda",data=training,verbose=FALSE)
-#mod2$finalModel
-
+```{r}
 pred2 <- predict(mod2, testing)
 
 confusionMatrix(data = pred2, reference = testing$classe)$table
@@ -281,7 +316,7 @@ confusionMatrix(data = pred2, reference = testing$classe)$table
 Finally the predictions made for our pml.testing data which has 20 observations is,
 
 
-```{r, echo=FALSE}
+```{r}
 pred <- predict(mod2, pml.testing)
 pred
 ```
