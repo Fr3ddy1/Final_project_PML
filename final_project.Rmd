@@ -1,7 +1,6 @@
 ---
-title: "Final_project"
+title: "Prediction Assignment"
 author: "Freddy F. Tapia C."
-date: "26/8/2020"
 output: html_document
 ---
 
@@ -11,8 +10,279 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Exploratory analysis
 
+```{r,echo=FALSE,include=FALSE}
+#LOAD LIBRARIES
+library(purrr)
+library(caret)
+library(plotly)
+
+#LOAD DATA
+pml.training <- read.csv("~/PRACTICAL_ML_COURSERA/pml-training.csv",stringsAsFactors=FALSE)
+pml.testing <- read.csv("~/PRACTICAL_ML_COURSERA/pml-testing.csv", stringsAsFactors=FALSE)
+
+```
+
+The pml.training data has 19.622 rows and 159 columns, on the other hand the pml.testing data has 20 rows and 159 columns. The head of the data pml.trainind is presented below,
+
+```{r,echo=FALSE}
+DT::datatable(head(pml.training),extensions = 'FixedColumns',
+  options = list(
+  dom = 't',
+  scrollX = TRUE,
+  scrollCollapse = TRUE))
+```
+
+
+The variable to predict is "classe", its distribution is,
+
+```{r,echo=FALSE}
+table(pml.training$classe)
+```
+
+### Analysis of NA's values
+
+In order to identify the null values of each columns, the following graph was made,
+
+```{r,echo=FALSE}
+#NA'S FUNCTION
+cant_nas <- function(data){
+  a <- as.data.frame(map_dbl(data,function(x){sum(is.na(x))}))
+  a$sum_NA <- rownames(a)
+  rownames(a) <- NULL
+  names(a) <- c("sum_NA","var")
+  a <- a[,c(2,1)]
+  a <- a[order(a$sum_NA,decreasing = TRUE),]
+  a$percent <- a$sum_NA/nrow(data)*100
+  
+  a <<- a
+  p <- plot_ly(a,x=~var, y=~sum_NA,type = "bar") %>% 
+    layout(barmode = 'stack',
+           title= c("Suma de NA"),
+           xaxis = list(categoryorder = "array",
+                        categoryarray = ~sum_NA))
+  return(p) 
+}
+
+#RUN FUNCTION
+cant_nas(pml.training)
+```
+
+A table with the same information of the plot is presented bellow, this table shows the name of the variable, the sum of the NA values and their percentage with respect to the total rows of the data,
+
+```{r,echo=FALSE}
+DT::datatable(a)
+```
+
+In order to have variables that provide me with good information and due to the high number of na in some columns, they were eliminated, 
+in this process 67 variables were eliminated. The same changes were applied to the test data, after this process the new data is,
+
+```{r,echo=FALSE}
+#NUMBER OF NA PER COLUMN
+train <- map_dbl(pml.training,.f = function(x){sum(is.na(x))})
+test <- map_dbl(pml.testing,.f = function(x){sum(is.na(x))})
+
+#REMOVE NA
+pml.training <- pml.training[,-c(1,as.numeric(which(train==19216)))]
+pml.testing <- pml.testing[,-c(1,as.numeric(which(train==19216)))] #OJO
+
+DT::datatable(head(pml.training),extensions = 'FixedColumns',
+  options = list(
+  dom = 't',
+  scrollX = TRUE,
+  scrollCollapse = TRUE))
+```
+
+
+After this, we proceeded to review the type of variable of each column, and it was observed that some columns were of the character type when in fact they were numeric, this due to some errors in these columns. After converting these variables to numerical, the analysis was performed again on their NA and the following graph was obtained,
+
+```{r,echo=FALSE, include=FALSE}
+#CLASS OF EACH COLUMN
+clase <- c()
+
+for (i in 1:ncol(pml.training)) {
+  clase[i] <- class(pml.training[,i])
+}
+
+clase <- as.data.frame(clase)
+clase$var <- names(pml.training)
+clase <- clase[,c(2,1)]
+
+
+fac <- clase$var[which(clase$clase=="character")]
+
+#INDEX
+aux <- c()
+
+for (i in 1:length(fac)) {
+  aux[i] <- which(fac[i]==names(pml.training))
+}
+
+#CONVERT IN NUMERIC VARIABLES
+for (i in 4:36) {
+  pml.training[,aux[i]] <- as.numeric(pml.training[,aux[i]])
+}
+
+```
+
+```{r,echo=FALSE}
+# NA'S
+cant_nas(pml.training)
+```
+
+A table with the same information of the plot is presented bellow,
+
+```{r,echo=FALSE}
+DT::datatable(a)
+```
+
+As before, these variables were eliminated, the new number of columns of the data is 59, a glimpse of it is shown below,
+
+```{r,echo=FALSE}
+#NA'S VALUES
+a <- a[which(a$sum_NA!=0),]
+
+#INDEX
+aux1 <- c()
+
+for (i in 1:nrow(a)) {
+  aux1[i] <- which(a$var[i]==names(pml.training))
+}
+
+#REMOVE VARIABLES
+pml.training <- pml.training[,-aux1]
+pml.testing <- pml.testing[,-aux1] 
+
+DT::datatable(head(pml.training),extensions = 'FixedColumns',
+  options = list(
+  dom = 't',
+  scrollX = TRUE,
+  scrollCollapse = TRUE))
+```
+
+
+Once the definitive data was obtained, we proceeded to see the correlation between the numerical variables and the variable "classe", the following table shows these values,
+
+```{r,echo=FALSE}
+#AS FACTOR
+pml.training$classe <- as.factor(pml.training$classe)
+pml.training$new_window <- as.factor(pml.training$new_window)
+pml.training$user_name <- as.factor(pml.training$user_name)
+pml.training$cvtd_timestamp <- as.factor(pml.training$cvtd_timestamp)
+
+#NEW VARIABLE 
+pml.training$classe1 <- NA
+
+pml.training$classe1[which(pml.training$classe=="A")] <- 1
+pml.training$classe1[which(pml.training$classe=="B")] <- 2
+pml.training$classe1[which(pml.training$classe=="C")] <- 3
+pml.training$classe1[which(pml.training$classe=="D")] <- 4
+pml.training$classe1[which(pml.training$classe=="E")] <- 5
+
+a <- round(cor(subset(pml.training[,-c(1,4,5,59)]), method = "pearson"), digits = 3)[56,]
+
+a <- a[order(a)]
+a <- as.data.frame(a)
+DT::datatable(a)
+```
+
+The table presented is the last row of the correlation matrix of our data, according to the values in it, no type of strong correlation is observed between the variable to be predicted and the predictors, which is good.
+
 
 ## Model adjusment
 
 
+In order to fit a model to the data, it was separated from the previously discussed data into two, one for training and the other for testing. The dimension of both datas are,
+
+
+
+```{r,echo=FALSE}
+#REMOVE AUX VARIABLE
+pml.training <- pml.training[,-60]
+
+set.seed(62433)
+
+#CREATE TRAIN AND TEST DATA
+inTrain = createDataPartition(pml.training$classe, p = 3/4)[[1]]
+
+training = pml.training[ inTrain,]
+
+testing = pml.training[-inTrain,]
+
+dim(training)
+dim(testing)
+
+```
+
+### Cross validation
+
+In order to find and fit a good model to the data, two options were considered, they are; the LDA and Rpart method of the caret package. 
+To evaluate their performance, a cross validation of 10 folds was carried out, at the end of which the precision value of each model was obtained,
+
+```{r,echo=FALSE}
+load("~/PRACTICAL_ML_COURSERA/data.RData")
+#CREATE FOLDS - CROSS VALIDATION
+folds <- createFolds(training$classe, k = 10)
+
+#CROSS VALIDATION - LDA 
+# cv <- lapply(folds, function(x){
+#   training_fold <- training[-x, ]
+#   test_fold <- training[x, ]
+#   clasificador <- train(classe ~ ., data = training_fold, method = "lda")
+#   y_pred <- predict(clasificador, newdata = test_fold)
+#   precision <- confusionMatrix(data = y_pred, reference = test_fold$classe)$overall[1]
+#   return(precision)
+# })
+# 
+# precision_cv<- mean(as.numeric(cv))
+# precision_cv
+# 
+# 
+# #CROSS VALIDATION - RPART
+# cv_rpart <- lapply(folds, function(x){
+#   training_fold <- training[-x, ]
+#   test_fold <- training[x, ]
+#   clasificador <- train(classe ~ ., data = training_fold, method = "rpart")
+#   y_pred <- predict(clasificador, newdata = test_fold)
+#   precision <- confusionMatrix(data = y_pred, reference = test_fold$classe)$overall[1]
+#   return(precision)
+# })
+# 
+# precision_rpart<- mean(as.numeric(cv_rpart))
+ #precision_rpart
+
+z <- as.data.frame(matrix(0,2,2))
+names(z) <- c("Model","Accuracy")
+
+z$Model <- c("LDA","Rpart")
+z$Accuracy <- c(precision_cv,precision_rpart)
+z
+```
+
+
+According to the previous table, it can be stated that the best model is the one obtained by the LDA method of the caret package.
+
+### Confussion matrix
+
+The confusion matrix associated with this model, is presented bellow,
+
+```{r,echo=FALSE}
+#mod2 <- train(classe ~.,method="lda",data=training,verbose=FALSE)
+#mod2$finalModel
+
+pred2 <- predict(mod2, testing)
+
+confusionMatrix(data = pred2, reference = testing$classe)$table
+
+```
+
+
 ## Predictions
+
+Finally the predictions made for our pml.testing data which has 20 observations is,
+
+
+```{r, echo=FALSE}
+pred <- predict(mod2, pml.testing)
+pred
+```
+
